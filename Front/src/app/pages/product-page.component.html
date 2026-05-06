@@ -1,0 +1,92 @@
+<section class="product-shell">
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Catalogue produits</p>
+      <h1>Gestion des produits</h1>
+      <p class="subtitle">
+        Centralisez la creation, le suivi et la consultation de votre catalogue depuis
+        une interface claire et efficace.
+      </p>
+    </div>
+
+    <div class="actions">
+      @if (currentUser(); as user) {
+        <div class="user-chip">
+          <strong>{{ user.userName }}</strong>
+          <span>{{ user.email }}</span>
+        </div>
+      }
+      <button type="button" class="ghost-link" (click)="openLicenceModal()">Voir la licence</button>
+      <a routerLink="/login" class="ghost-link">Connexion</a>
+      <button type="button" class="ghost-button" (click)="logout()">Se deconnecter</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <form class="panel form-panel" [formGroup]="form" (ngSubmit)="submit()">
+      <h2>Ajouter un produit</h2>
+
+      <label class="field">
+        <span>Nom</span>
+        <input type="text" formControlName="name" placeholder="Ordinateur" />
+        @if (form.controls.name.touched && form.controls.name.invalid) {
+          <small>Le nom du produit est obligatoire.</small>
+        }
+      </label>
+
+      <label class="field">
+        <span>Prix</span>
+        <input type="number" step="0.01" formControlName="price" placeholder="99.99" />
+        @if (form.controls.price.touched && form.controls.price.invalid) {
+          <small>Le prix doit etre superieur a 0.</small>
+        }
+      </label>
+
+      @if (errorMessage()) {
+        <p class="message error">{{ errorMessage() }}</p>
+      }
+
+      @if (successMessage()) {
+        <p class="message success">{{ successMessage() }}</p>
+      }
+
+      <button type="submit" [disabled]="isSubmitting()">
+        {{ isSubmitting() ? 'Creation...' : 'Ajouter le produit' }}
+      </button>
+    </form>
+
+    <section class="panel table-panel">
+      <div class="table-head">
+        <h2>Liste des produits</h2>
+        <button type="button" class="ghost-button" (click)="loadProducts()">Rafraichir</button>
+      </div>
+
+      @if (isLoading()) {
+        <p class="empty-state">Chargement des produits...</p>
+      } @else if (products().length === 0) {
+        <p class="empty-state">Aucun produit disponible pour le moment.</p>
+      } @else {
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Nom</th>
+                <th>Prix</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (product of products(); track product.id ?? product.name + '-' + product.price; let index = $index) {
+                <tr>
+                  <td>{{ product.id ?? index + 1 }}</td>
+                  <td>{{ product.name }}</td>
+                  <td>{{ product.price | currency:'USD':'symbol':'1.2-2' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      }
+    </section>
+  </div>
+</section>

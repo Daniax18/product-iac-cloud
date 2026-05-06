@@ -1,0 +1,129 @@
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1.1fr minmax(320px, 420px);
+  gap: 2rem;
+  align-items: center;
+  padding: 3rem clamp(1.2rem, 4vw, 4rem);
+}
+
+.hero {
+  padding-right: 1rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.75rem;
+  color: #b85c38;
+  font-size: 0.85rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  margin: 0;
+  font-size: clamp(2.5rem, 6vw, 4.8rem);
+  line-height: 0.95;
+}
+
+.lead {
+  max-width: 44rem;
+  margin-top: 1rem;
+  font-size: 1.05rem;
+  line-height: 1.7;
+  color: #59453f;
+}
+
+.lead code {
+  background: rgba(35, 24, 21, 0.08);
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+}
+
+.card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.5rem;
+  border: 1px solid rgba(35, 24, 21, 0.1);
+  border-radius: 28px;
+  background: rgba(255, 252, 248, 0.82);
+  box-shadow: 0 24px 60px rgba(86, 47, 24, 0.12);
+  backdrop-filter: blur(10px);
+}
+
+.field {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.field span {
+  font-weight: 700;
+}
+
+.field input {
+  width: 100%;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(35, 24, 21, 0.15);
+  border-radius: 16px;
+  background: #fff;
+  outline: none;
+}
+
+.field input:focus {
+  border-color: #d97f4a;
+  box-shadow: 0 0 0 4px rgba(217, 127, 74, 0.16);
+}
+
+.field small {
+  color: #b42318;
+}
+
+.message {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  font-weight: 600;
+}
+
+.message.error {
+  background: rgba(180, 35, 24, 0.1);
+  color: #8f1f13;
+}
+
+.message.success {
+  background: rgba(12, 140, 92, 0.12);
+  color: #096a45;
+}
+
+button {
+  padding: 0.95rem 1.2rem;
+  border: 0;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #d46b2c, #ee9f4b);
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+.link-row {
+  margin: 0;
+  color: #59453f;
+}
+
+.link-row a {
+  color: #8d421b;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+@media (max-width: 900px) {
+  .auth-shell {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+}

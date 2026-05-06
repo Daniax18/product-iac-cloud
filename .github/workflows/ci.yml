@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - develop
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Build and validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: Front/package-lock.json
+
+      - name: Build front-end
+        working-directory: Front
+        run: |
+          npm ci
+          npm run build
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Test gateway
+        working-directory: Gateway
+        run: |
+          chmod +x mvnw
+          ./mvnw test
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build authentication service
+        working-directory: Authentification
+        run: |
+          dotnet restore
+          dotnet build --configuration Release --no-restore
+
+      - name: Build product service
+        working-directory: Product
+        run: |
+          dotnet restore
+          dotnet build --configuration Release --no-restore
+
+      - name: Validate Docker Compose file
+        run: docker compose config

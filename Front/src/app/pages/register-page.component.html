@@ -1,0 +1,52 @@
+<section class="auth-shell">
+  <div class="hero">
+    <p class="eyebrow">Compte utilisateur</p>
+    <h1>Creer un compte</h1>
+    <p class="lead">
+      Creez votre espace securise pour administrer vos produits et suivre votre activite.
+    </p>
+  </div>
+
+  <form class="card" [formGroup]="form" (ngSubmit)="submit()">
+    <label class="field">
+      <span>Nom d'utilisateur</span>
+      <input type="text" formControlName="userName" placeholder="midera" />
+      @if (form.controls.userName.touched && form.controls.userName.invalid) {
+        <small>Le nom d'utilisateur est obligatoire.</small>
+      }
+    </label>
+
+    <label class="field">
+      <span>Email</span>
+      <input type="email" formControlName="email" placeholder="midera@mail.com" />
+      @if (form.controls.email.touched && form.controls.email.invalid) {
+        <small>Entrez une adresse email valide.</small>
+      }
+    </label>
+
+    <label class="field">
+      <span>Mot de passe</span>
+      <input type="password" formControlName="password" placeholder="Minimum 6 caracteres" />
+      @if (form.controls.password.touched && form.controls.password.invalid) {
+        <small>Le mot de passe doit contenir au moins 6 caracteres.</small>
+      }
+    </label>
+
+    @if (errorMessage()) {
+      <p class="message error">{{ errorMessage() }}</p>
+    }
+
+    @if (successMessage()) {
+      <p class="message success">{{ successMessage() }}</p>
+    }
+
+    <button type="submit" [disabled]="isSubmitting()">
+      {{ isSubmitting() ? 'Creation...' : 'Creer le compte' }}
+    </button>
+
+    <p class="link-row">
+      Deja inscrit ?
+      <a routerLink="/login">Se connecter</a>
+    </p>
+  </form>
+</section>

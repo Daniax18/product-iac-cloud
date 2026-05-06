@@ -1,0 +1,87 @@
+services:
+
+  front-service:
+    build: ./Front
+    ports:
+      - "${FRONT_PORT}:80"
+    depends_on:
+      - gateway-service
+    networks:
+      - iac-network
+
+  gateway-service:
+    build: ./Gateway
+    networks:
+      - iac-network
+    
+
+  authentification-db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${AUTH_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${AUTH_DB_NAME:-authentication_db}
+    ports:
+      - "5433:5432"
+    volumes:
+      - authentification_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - iac-network
+
+  authentification-service:
+    build: ./Authentification
+    environment:
+      ConnectionStrings__DockerDb: Host=authentification-db;Database=${AUTH_DB_NAME:-authentication_db};Username=${AUTH_DB_USER:-postgres};Password=${AUTH_DB_PASSWORD:-postgres}
+      JwtSettings__SecretKey: ${JWT_SECRET:-dev-only-change-me-before-production}
+      JwtSettings__Issuer: ${JWT_ISSUER:-AuthAPI}
+      JwtSettings__Audience: ${JWT_AUDIENCE:-AuthAPIUsers}
+      JwtSettings__ExpiryInMinutes: ${JWT_EXPIRY_MINUTES:-60}
+    depends_on:
+      authentification-db:
+        condition: service_healthy
+    networks:
+      - iac-network
+
+  product-db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${PRODUCT_DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${PRODUCT_DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${PRODUCT_DB_NAME:-product_db}
+    ports:
+      - "5434:5432"
+    volumes:
+      - product_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - iac-network
+
+  product-service:
+    build: ./Product
+    environment:
+      ConnectionStrings__DockerDb: Host=product-db;Database=${PRODUCT_DB_NAME:-product_db};Username=${PRODUCT_DB_USER:-postgres};Password=${PRODUCT_DB_PASSWORD:-postgres}
+    ports:
+      - "5001:8080"
+    depends_on:
+      product-db:
+        condition: service_healthy  
+    networks:
+      - iac-network
+
+volumes:
+  authentification_data:
+  product_data:
+
+networks:
+  iac-network:

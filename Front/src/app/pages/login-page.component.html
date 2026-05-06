@@ -1,0 +1,45 @@
+<section class="auth-shell">
+  <div class="hero">
+    <p class="eyebrow">Espace professionnel</p>
+    <h1>Connexion</h1>
+    <p class="lead">
+      Connectez-vous pour acceder a votre espace de gestion et piloter votre catalogue
+      produits en toute simplicite.
+    </p>
+  </div>
+
+  <form class="card" [formGroup]="form" (ngSubmit)="submit()">
+    <label class="field">
+      <span>Email</span>
+      <input type="email" formControlName="email" placeholder="admin@mail.com" />
+      @if (form.controls.email.touched && form.controls.email.invalid) {
+        <small>Entrez une adresse email</small>
+      }
+    </label>
+
+    <label class="field">
+      <span>Mot de passe</span>
+      <input type="password" formControlName="password" placeholder="Votre mot de passe" />
+      @if (form.controls.password.touched && form.controls.password.invalid) {
+        <small>Le mot de passe est obligatoire.</small>
+      }
+    </label>
+
+    @if (errorMessage()) {
+      <p class="message error">{{ errorMessage() }}</p>
+    }
+
+    @if (successMessage()) {
+      <p class="message success">{{ successMessage() }}</p>
+    }
+
+    <button type="submit" [disabled]="isSubmitting()">
+      {{ isSubmitting() ? 'Connexion...' : 'Se connecter' }}
+    </button>
+
+    <p class="link-row">
+      Pas encore de compte ?
+      <a routerLink="/register">Create account</a>
+    </p>
+  </form>
+</section>

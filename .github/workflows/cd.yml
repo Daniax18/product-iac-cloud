@@ -1,0 +1,62 @@
+name: CD
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-branch:
+    name: Verify tag is on main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check tag is on main
+        run: |
+          if ! git branch -r --contains "${{ github.ref_name }}" | grep -q "origin/main"; then
+            echo "Le tag ${{ github.ref_name }} n'est pas sur main !" >&2
+            exit 1
+          fi
+          echo "Tag sur main, deploy autorisé"
+
+  deploy:
+    name: Deploy to AWS EC2
+    runs-on: ubuntu-latest
+    needs: check-branch
+    environment: develop
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH access
+        shell: bash
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy to EC2
+        shell: bash
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_DEPLOY_PATH: ${{ secrets.EC2_DEPLOY_PATH }}
+          DEPLOY_BRANCH: ${{ github.ref_name }}
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+            -o ServerAliveInterval=60 \
+            -o ServerAliveCountMax=10 \
+            "${EC2_USER}@${EC2_HOST}" \
+            "export DEPLOY_PATH='${EC2_DEPLOY_PATH}' DEPLOY_BRANCH='${DEPLOY_BRANCH}'; bash -s" \
+            -- < ./scripts/deploy-ec2.sh
