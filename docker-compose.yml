@@ -11,6 +11,10 @@ services:
 
   gateway-service:
     build: ./Gateway
+    environment:
+      JwtSettings__SecretKey: ${JWT_SECRET:-dev-only-change-me-before-production}
+    ports:
+      - "8080:8080"
     networks:
       - iac-network
     
@@ -45,6 +49,8 @@ services:
     depends_on:
       authentification-db:
         condition: service_healthy
+    ports:
+      - "5002:8080"
     networks:
       - iac-network
 
