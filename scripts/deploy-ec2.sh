@@ -26,9 +26,8 @@ if [ ! -f .env ]; then
 fi
 
 echo "Pulling latest changes from ${DEPLOY_BRANCH}..."
-git fetch origin "${DEPLOY_BRANCH}"
+git fetch origin --tags
 git checkout "${DEPLOY_BRANCH}"
-git pull --ff-only origin "${DEPLOY_BRANCH}"
 
 echo "Starting Docker build in background..."
 nohup bash -c "
