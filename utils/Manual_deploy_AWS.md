@@ -113,8 +113,8 @@ docker buildx version
 ## 5. Cloner le repo et déployer
 
 ```bash
-git clone https://github.com/Daniax18/devops-iac-starter.git
-cd devops-iac-starter
+git clone https://github.com/Daniax18/product-iac-cloud.git
+cd product-iac-cloud
 git checkout develop
 # create .env necessary from .env.example format
 nano .env
