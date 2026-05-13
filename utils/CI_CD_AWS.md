@@ -17,8 +17,8 @@ Suivre d'abord le guide manuel existant : [`utils/Manual_deploy_AWS.md`](./Manua
 Une fois Docker, Git et Buildx installés sur l'instance :
 
 ```bash
-git clone https://github.com/<votre-org-ou-user>/devops-iac-starter.git
-cd devops-iac-starter
+git clone https://github.com/<votre-org-ou-user>/product-iac-cloud.git
+cd product-iac-cloud
 git checkout develop
 cp .env.example .env
 ```
@@ -45,7 +45,7 @@ Créer ces secrets de repository :
 - `EC2_HOST` : IP publique ou DNS public de l'instance
 - `EC2_USER` : utilisateur SSH, souvent `ubuntu`
 - `EC2_SSH_PRIVATE_KEY` : contenu complet de la clé privée SSH utilisée pour se connecter
-- `EC2_DEPLOY_PATH` : chemin absolu du repo sur l'instance, par exemple `/home/ubuntu/devops-iac-starter`
+- `EC2_DEPLOY_PATH` : chemin absolu du repo sur l'instance, par exemple `/home/ubuntu/product-iac-cloud`
 
 Option utile mais non obligatoire :
 
