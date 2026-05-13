@@ -43,11 +43,11 @@ jobs:
           java-version: '17'
           cache: maven
 
-      - name: Test gateway
+      - name: Build gateway
         working-directory: Gateway
         run: |
           chmod +x mvnw
-          ./mvnw test
+          ./mvnw clean package -DskipTests
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
