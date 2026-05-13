@@ -72,8 +72,69 @@ Déclencheurs :
 
 - connexion SSH à l'EC2
 - exécution du script de déploiement
+  
+## 5. Déploiement par tag (Release)
 
-## 5. Script de déploiement
+En plus du workflow sur `develop`, un workflow de release est déclenché lorsqu’un tag commençant par `v` est poussé sur un commit présent dans `main`.
+
+Exemples :
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+ou :
+
+```bash
+git tag v1.1.0
+git push origin v1.1.0
+```
+
+Flux recommandé :
+
+```txt
+develop
+    ↓
+Pull Request
+    ↓
+main
+    ↓
+Créer un tag
+    ↓
+v1.0.0
+    ↓
+Déploiement automatique
+```
+
+Le workflow vérifie automatiquement que le tag appartient à `main`.
+
+Exemple :
+
+```bash
+git branch -r --contains v1.0.0
+```
+
+Si le tag ne pointe pas vers un commit présent dans `main`, le déploiement est refusé.
+
+Sur l'instance EC2, le script récupère les tags puis déploie exactement la version ciblée :
+
+```bash
+git fetch --all --tags
+git checkout -f v1.0.0
+docker compose up -d --build --remove-orphans
+```
+
+Contrairement à `develop`, aucun `git pull` n'est nécessaire ici car un tag pointe vers un commit figé.
+
+Cette approche permet :
+
+- déploiement reproductible
+- rollback facile
+- déploiement d’une version précise
+- séparation claire entre environnement de développement et release
+
+## 6. Script de déploiement
 
 Le script est dans [`scripts/deploy-ec2.sh`](../scripts/deploy-ec2.sh)
 
@@ -94,7 +155,7 @@ Le script échoue volontairement si :
 - le repo n'est pas cloné sur l'instance
 - le fichier `.env` n'existe pas encore
 
-## 6. Test bout en bout
+## 7. Test bout en bout
 
 1. pousser les changements sur `develop`
 2. ouvrir l'onglet `Actions` sur GitHub
@@ -102,7 +163,7 @@ Le script échoue volontairement si :
 4. vérifier que le job `Deploy to AWS EC2` passe
 5. ouvrir `http://<IP_EC2>:8080`
 
-## 7. Si vous refaites le lab
+## 8. Si vous refaites le lab
 
 Comme vous avez déjà sauvegardé vos commandes, vous pourrez simplement :
 
