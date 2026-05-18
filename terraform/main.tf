@@ -114,7 +114,7 @@ resource "aws_instance" "app" {
   user_data = <<-EOF
     #!/bin/bash
     mkdir -p ${var.deploy_path}
-    chown ec2-user:ec2-user ${var.deploy_path}
+    chown ubuntu:ubuntu ${var.deploy_path}
   EOF
 
   tags = {
