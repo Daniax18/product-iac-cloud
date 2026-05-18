@@ -10,7 +10,7 @@
 
   <form class="card" [formGroup]="form" (ngSubmit)="submit()">
     <label class="field">
-      <span>Email de co</span>
+      <span>Email de connexion</span>
       <input type="email" formControlName="email" placeholder="admin@mail.com" />
       @if (form.controls.email.touched && form.controls.email.invalid) {
         <small>Entrez une adresse email</small>
