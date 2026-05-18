@@ -1,0 +1,69 @@
+- name: Create deploy directory
+  file:
+    path: "{{ deploy_path }}"
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: "0755"
+
+- name: Check if repo already cloned
+  stat:
+    path: "{{ deploy_path }}/.git"
+  register: git_repo
+
+- name: Clone repository
+  become_user: ubuntu
+  git:
+    repo: "{{ repo_url }}"
+    dest: "{{ deploy_path }}"
+    version: "{{ deploy_branch }}"
+    force: yes
+  when: not git_repo.stat.exists
+
+- name: Update repository to target tag/branch
+  become_user: ubuntu
+  git:
+    repo: "{{ repo_url }}"
+    dest: "{{ deploy_path }}"
+    version: "{{ deploy_branch }}"
+    force: yes
+    update: yes
+  when: git_repo.stat.exists
+
+- name: Deploy .env file from template
+  template:
+    src: "../../../templates/.env.j2"
+    dest: "{{ deploy_path }}/.env"
+    owner: ubuntu
+    group: ubuntu
+    mode: "0600"
+
+- name: Pull/build Docker images
+  become_user: ubuntu
+  command:
+    cmd: docker compose build --pull
+    chdir: "{{ deploy_path }}"
+
+- name: Stop existing containers
+  become_user: ubuntu
+  command:
+    cmd: docker compose down --remove-orphans
+    chdir: "{{ deploy_path }}"
+  ignore_errors: yes
+
+- name: Start containers
+  become_user: ubuntu
+  command:
+    cmd: docker compose up -d
+    chdir: "{{ deploy_path }}"
+
+- name: Wait for containers to be healthy
+  become_user: ubuntu
+  command:
+    cmd: docker compose ps
+    chdir: "{{ deploy_path }}"
+  register: compose_status
+  retries: 10
+  delay: 15
+  until: "'unhealthy' not in compose_status.stdout"
+  changed_when: false

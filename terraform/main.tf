@@ -1,191 +1,123 @@
-# ================================
-# Provider Docker
-# ================================
 terraform {
+  required_version = ">= 1.5.0"
+
   required_providers {
-    docker = {
-      source  = "kreuzwerker/docker"
-      version = "~> 3.0"
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
     }
   }
-}
 
-provider "docker" {}
-
-# ================================
-# Réseau isolé par client
-# ================================
-resource "docker_network" "client_network" {
-  name = "${var.client_prefix}-network"
-}
-
-# ================================
-# Auth DB
-# ================================
-resource "docker_container" "auth_db" {
-  name  = "${var.client_prefix}-auth-db"
-  image = "postgres:15"
-
-  env = [
-    "POSTGRES_USER=${var.auth_db_user}",
-    "POSTGRES_PASSWORD=${var.auth_db_password}",
-    "POSTGRES_DB=${var.auth_db_name}"
-  ]
-
-  ports {
-    internal = 5432
-    external = var.auth_db_port
-  }
-
-  networks_advanced {
-    name = docker_network.client_network.name
-  }
-
-  healthcheck {
-    test         = ["CMD-SHELL", "pg_isready -U ${var.auth_db_user}"]
-    interval     = "5s"
-    timeout      = "5s"
-    retries      = 5
-    start_period = "30s"
-  }
-
-  volumes {
-    volume_name    = docker_volume.auth_data.name
-    container_path = "/var/lib/postgresql/data"
+  # Backend S3 — le bucket doit exister avant (créé manuellement une fois par session AWS Academy)
+  backend "s3" {
+    bucket = "iac-terraform-state-bucket-midera"   # à adapter, voir étapes AWS Academy
+    key    = "iac-app/terraform.tfstate"
+    region = "us-east-1"
+    # Pas de dynamodb lock : AWS Academy ne permet pas de créer des tables DynamoDB facilement
   }
 }
 
-# ================================
-# Product DB
-# ================================
-resource "docker_container" "product_db" {
-  name  = "${var.client_prefix}-product-db"
-  image = "postgres:15"
+provider "aws" {
+  region = var.aws_region
+  # Les credentials viennent des variables d'environnement injectées par le CD :
+  # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+}
 
-  env = [
-    "POSTGRES_USER=${var.product_db_user}",
-    "POSTGRES_PASSWORD=${var.product_db_password}",
-    "POSTGRES_DB=${var.product_db_name}"
-  ]
+# ─── Data sources ────────────────────────────────────────────────────────────
 
-  ports {
-    internal = 5432
-    external = var.product_db_port
-  }
+data "aws_vpc" "default" {
+  default = true
+}
 
-  networks_advanced {
-    name = docker_network.client_network.name
-  }
-
-  healthcheck {
-    test         = ["CMD-SHELL", "pg_isready -U ${var.product_db_user}"]
-    interval     = "5s"
-    timeout      = "5s"
-    retries      = 5
-    start_period = "30s"
-  }
-
-  volumes {
-    volume_name    = docker_volume.product_data.name
-    container_path = "/var/lib/postgresql/data"
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
   }
 }
 
-# ================================
-# Auth Service
-# ================================
-resource "docker_container" "auth_service" {
-  name  = "${var.client_prefix}-auth-service"
-  image = "${var.client_prefix}-auth:latest"
-  restart = "on-failure"
+# ─── Key Pair ─────────────────────────────────────────────────────────────────
+# Recréée à chaque session car la key pair peut être perdue
 
-  env = [
-    "ConnectionStrings__DockerDb=Host=${var.client_prefix}-auth-db;Database=${var.auth_db_name};Username=${var.auth_db_user};Password=${var.auth_db_password}",
-    "JwtSettings__SecretKey=${var.jwt_secret}",
-    "JwtSettings__Issuer=${var.jwt_issuer}",
-    "JwtSettings__Audience=${var.jwt_audience}",
-    "JwtSettings__ExpiryInMinutes=${var.jwt_expiry_minutes}"
-  ]
+resource "aws_key_pair" "deploy" {
+  key_name   = var.key_pair_name
+  public_key = var.public_key_content
 
-  networks_advanced {
-    name = docker_network.client_network.name
+  lifecycle {
+    # Si elle existe déjà (session précédente), on la recrée proprement
+    ignore_changes = []
   }
-
-  depends_on = [docker_container.auth_db]
 }
 
-# ================================
-# Product Service
-# ================================
-resource "docker_container" "product_service" {
-  name  = "${var.client_prefix}-product-service"
-  image = "${var.client_prefix}-product:latest"
-  restart = "on-failure"
+# ─── Security Group ───────────────────────────────────────────────────────────
 
-  env = [
-    "ConnectionStrings__DockerDb=Host=${var.client_prefix}-product-db;Database=${var.product_db_name};Username=${var.product_db_user};Password=${var.product_db_password}"
-  ]
+resource "aws_security_group" "app" {
+  name        = "${var.app_name}-sg"
+  description = "Security group for ${var.app_name}"
+  vpc_id      = data.aws_vpc.default.id
 
-  ports {
-    internal = 8080
-    external = var.product_port
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
-  networks_advanced {
-    name = docker_network.client_network.name
+  ingress {
+    description = "Frontend"
+    from_port   = 5000
+    to_port     = 5000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
-  depends_on = [docker_container.product_db]
+  ingress {
+    description = "Gateway"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.app_name}-sg"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
-# ================================
-# Gateway Service
-# ================================
-resource "docker_container" "gateway_service" {
-  name  = "${var.client_prefix}-gateway-service"
-  image = "${var.client_prefix}-gateway:latest"
+# ─── EC2 Instance ─────────────────────────────────────────────────────────────
 
-  ports {
-    internal = 8080
-    external = var.gateway_port
+resource "aws_instance" "app" {
+  ami                         = var.ami_id
+  instance_type               = var.instance_type
+  key_name                    = aws_key_pair.deploy.key_name
+  subnet_id                   = tolist(data.aws_subnets.default.ids)[0]
+  vpc_security_group_ids      = [aws_security_group.app.id]
+  associate_public_ip_address = true
+
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp3"
   }
 
-  networks_advanced {
-    name = docker_network.client_network.name
+  user_data = <<-EOF
+    #!/bin/bash
+    mkdir -p ${var.deploy_path}
+    chown ec2-user:ec2-user ${var.deploy_path}
+  EOF
+
+  tags = {
+    Name = var.app_name
   }
-
-  depends_on = [
-    docker_container.auth_service,
-    docker_container.product_service
-  ]
-}
-
-# ================================
-# Front Service
-# ================================
-resource "docker_container" "front_service" {
-  name  = "${var.client_prefix}-front-service"
-  image = "${var.client_prefix}-front:latest"
-
-  ports {
-    internal = 80
-    external = var.front_port
-  }
-
-  networks_advanced {
-    name = docker_network.client_network.name
-  }
-
-  depends_on = [docker_container.gateway_service]
-}
-
-# ================================
-# Volumes
-# ================================
-resource "docker_volume" "auth_data" {
-  name = "${var.client_prefix}-auth-data"
-}
-
-resource "docker_volume" "product_data" {
-  name = "${var.client_prefix}-product-data"
 }

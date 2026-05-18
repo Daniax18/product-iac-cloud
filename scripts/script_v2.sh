@@ -49,6 +49,6 @@ tmux new-session -d -s install -x 220 -y 50 \
   "docker compose up --build 2>&1 | tee /tmp/docker-build.log"
 
 echo ""
-echo "✅ Build lancé en arrière-plan dans tmux !"
+echo " Build lancé en arrière-plan dans tmux !"
 echo "Pour suivre les logs : tmux attach -t install"
 echo "Ou sans SSH active : tail -f /tmp/docker-build.log"

@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ─── Vérification tag sur main ──────────────────────────────────────────────
   check-branch:
     name: Verify tag is on main
     runs-on: ubuntu-latest
@@ -28,35 +29,135 @@ jobs:
           fi
           echo "Tag sur main, deploy autorisé"
 
-  deploy:
-    name: Deploy to AWS EC2
+  # ─── Terraform : provisionne l'infrastructure ───────────────────────────────
+  terraform:
+    name: Terraform Apply
     runs-on: ubuntu-latest
     needs: check-branch
+    environment: develop
+    outputs:
+      public_ip: ${{ steps.tf_output.outputs.public_ip }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.0"
+          terraform_wrapper: false
+
+      # Génère une paire de clés SSH éphémère pour ce déploiement
+      - name: Restore SSH key pair from secret
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.EC2_SSH_PRIVATE_KEY_DEPLOY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keygen -y -f ~/.ssh/deploy_key > ~/.ssh/deploy_key.pub
+          echo "SSH_PUBLIC_KEY=$(cat ~/.ssh/deploy_key.pub)" >> $GITHUB_ENV
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region:            us-east-1
+
+      # Gestion de la key pair existante : on la supprime si elle existe déjà
+      # pour éviter l'erreur "already exists" entre deux sessions Academy
+      - name: Delete existing EC2 key pair if present
+        run: |
+          aws ec2 delete-key-pair --key-name iac-deploy-key 2>/dev/null || true
+
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: terraform
+        run: |
+          terraform plan \
+            -var="public_key_content=${{ env.SSH_PUBLIC_KEY }}" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: terraform
+        run: terraform apply -auto-approve tfplan
+
+      - name: Get Terraform outputs
+        id: tf_output
+        working-directory: terraform
+        run: |
+          echo "public_ip=$(terraform output -raw public_ip)" >> $GITHUB_OUTPUT
+
+  # ─── Ansible : configure l'EC2 et déploie l'app ─────────────────────────────
+  ansible:
+    name: Ansible Deploy
+    runs-on: ubuntu-latest
+    needs: terraform
     environment: develop
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure SSH access
-        shell: bash
+      - name: Install Ansible
+        run: |
+          pip install ansible
+
+      # On regénère la même clé SSH depuis les secrets (voir note plus bas)
+      - name: Restore SSH private key
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.EC2_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          printf '%s\n' "${{ secrets.EC2_SSH_PRIVATE_KEY_DEPLOY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Deploy to EC2
-        shell: bash
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ secrets.EC2_USER }}
-          EC2_DEPLOY_PATH: ${{ secrets.EC2_DEPLOY_PATH }}
-          DEPLOY_BRANCH: ${{ github.ref_name }}
+      - name: Wait for EC2 SSH port
         run: |
-          ssh -i ~/.ssh/deploy_key \
-            -o ServerAliveInterval=60 \
-            -o ServerAliveCountMax=10 \
-            "${EC2_USER}@${EC2_HOST}" \
-            "export DEPLOY_PATH='${EC2_DEPLOY_PATH}' DEPLOY_BRANCH='${DEPLOY_BRANCH}'; bash -s" \
-            -- < ./scripts/deploy-ec2.sh
+          EC2_IP="${{ needs.terraform.outputs.public_ip }}"
+          echo "Waiting for SSH on $EC2_IP..."
+          for i in $(seq 1 20); do
+            if nc -z -w5 "$EC2_IP" 22 2>/dev/null; then
+              echo "SSH ready"
+              break
+            fi
+            echo "Attempt $i/20 - waiting 15s..."
+            sleep 15
+          done
+
+      - name: Add EC2 to known hosts
+        run: |
+          EC2_IP="${{ needs.terraform.outputs.public_ip }}"
+          ssh-keyscan -H "$EC2_IP" >> ~/.ssh/known_hosts
+
+      - name: Generate Ansible inventory
+        run: |
+          EC2_IP="${{ needs.terraform.outputs.public_ip }}"
+          cat > ansible/inventory.ini <<EOF
+          [ec2]
+          ${EC2_IP} ansible_user=ec2-user ansible_ssh_private_key_file=~/.ssh/deploy_key ansible_ssh_common_args='-o StrictHostKeyChecking=accept-new -o ServerAliveInterval=60'
+          EOF
+
+      - name: Run Ansible playbook
+        env:
+          DEPLOY_BRANCH: ${{ github.ref_name }}
+          REPO_URL:       ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          ansible-playbook \
+            -i ansible/inventory.ini \
+            ansible/playbook.yml \
+            --extra-vars "
+              auth_db_user=${{ secrets.AUTH_DB_USER }}
+              auth_db_password=${{ secrets.AUTH_DB_PASSWORD }}
+              auth_db_name=${{ secrets.AUTH_DB_NAME }}
+              product_db_user=${{ secrets.PRODUCT_DB_USER }}
+              product_db_password=${{ secrets.PRODUCT_DB_PASSWORD }}
+              product_db_name=${{ secrets.PRODUCT_DB_NAME }}
+              jwt_secret=${{ secrets.JWT_SECRET }}
+              jwt_issuer=${{ secrets.JWT_ISSUER }}
+              jwt_audience=${{ secrets.JWT_AUDIENCE }}
+              jwt_expiry_minutes=${{ secrets.JWT_EXPIRY_MINUTES }}
+            " \
+            -v
