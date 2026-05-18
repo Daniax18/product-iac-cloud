@@ -1,114 +1,21 @@
 ---
-- name: Déploiement client
-  hosts: localhost
-  connection: local
+- name: Configure EC2 and deploy application
+  hosts: ec2
+  become: true
+  vars:
+    deploy_path: "/opt/iac-app"
+    deploy_branch: "{{ lookup('env', 'DEPLOY_BRANCH') }}"
+    repo_url: "{{ lookup('env', 'REPO_URL') }}"
 
-  tasks:
+  pre_tasks:
+    - name: Wait for SSH to be ready
+      wait_for_connection:
+        timeout: 120
+        sleep: 5
 
-    # ================================
-    # 0. Injection variables Angular
-    # ================================
-    - name: Injecter les variables dans environment.ts
-      template:
-        src: "{{ playbook_dir }}/../Front/src/environments/environment.ts.j2"
-        dest: "{{ playbook_dir }}/../Front/src/environments/environment.ts"
+    - name: Gather facts
+      setup:
 
-    - name: Injecter les variables dans nginx.conf
-      template:
-        src: "{{ playbook_dir }}/../Front/nginx.conf.j2"
-        dest: "{{ playbook_dir }}/../Front/nginx.conf"
-
-    - name: Injecter les variables dans application.properties
-      template:
-        src: "{{ playbook_dir }}/../Gateway/src/main/resources/application.properties.j2"
-        dest: "{{ playbook_dir }}/../Gateway/src/main/resources/application.properties"
-
-    # ================================
-    # 1. Build des images Docker
-    # ================================
-    - name: Build image Front
-      community.docker.docker_image:
-        name: "{{ client_prefix }}-front"
-        tag: latest
-        build:
-          path: "{{ playbook_dir }}/../Front"
-        source: build
-
-    - name: Build image Auth
-      community.docker.docker_image:
-        name: "{{ client_prefix }}-auth"
-        tag: latest
-        build:
-          path: "{{ playbook_dir }}/../Authentification"
-        source: build
-
-    - name: Build image Gateway
-      community.docker.docker_image:
-        name: "{{ client_prefix }}-gateway"
-        tag: latest
-        build:
-          path: "{{ playbook_dir }}/../Gateway"
-        source: build
-
-    - name: Build image Product
-      community.docker.docker_image:
-        name: "{{ client_prefix }}-product"
-        tag: latest
-        build:
-          path: "{{ playbook_dir }}/../Product"
-        source: build
-
-    # ================================
-    # 2. Générer le fichier tfvars
-    # ================================
-    - name: Générer terraform.tfvars
-      copy:
-        dest: "{{ playbook_dir }}/../terraform/terraform.tfvars"
-        content: |
-          client_name        = "{{ client_name }}"
-          client_siege       = "{{ client_siege }}"
-          client_prefix      = "{{ client_prefix }}"
-          front_port         = "{{ front_port }}"
-          gateway_port       = "{{ gateway_port }}"
-          auth_db_port       = "{{ auth_db_port }}"
-          product_port       = "{{ product_port }}"
-          product_db_port    = "{{ product_db_port }}"
-          auth_db_user       = "{{ auth_db_user }}"
-          auth_db_password   = "{{ auth_db_password }}"
-          auth_db_name       = "{{ auth_db_name }}"
-          product_db_user    = "{{ product_db_user }}"
-          product_db_password = "{{ product_db_password }}"
-          product_db_name    = "{{ product_db_name }}"
-          jwt_secret         = "{{ jwt_secret }}"
-          jwt_issuer         = "{{ jwt_issuer }}"
-          jwt_audience       = "{{ jwt_audience }}"
-          jwt_expiry_minutes = "{{ jwt_expiry_minutes }}"
-
-    # ================================
-    # 3. Terraform init
-    # ================================
-    - name: Terraform init
-      command: terraform init
-      args:
-        chdir: "{{ playbook_dir }}/../terraform"
-
-    # ================================
-    # 4. Terraform apply
-    # ================================
-    - name: Terraform apply
-      command: >
-        terraform apply -auto-approve
-        -state=../terraform/states/{{ client_prefix }}.tfstate
-      args:
-        chdir: "{{ playbook_dir }}/../terraform"
-
-    # ================================
-    # 5. Vérification
-    # ================================
-    - name: Vérifier les conteneurs
-      command: docker ps --filter "name={{ client_prefix }}"
-      register: docker_output
-
-    - name: Afficher les conteneurs actifs
-      debug:
-        msg: "{{ docker_output.stdout }}"
+  roles:
+    - docker
+    - app

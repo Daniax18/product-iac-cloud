@@ -1,0 +1,5 @@
+aws_region         = "us-east-1"
+instance_type      = "t3.small"
+app_name           = "iac-app"
+deploy_path        = "/opt/iac-app"
+# public_key_content est injectée dynamiquement par le CD, ne pas mettre ici
