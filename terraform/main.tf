@@ -10,7 +10,7 @@ terraform {
 
   # Backend S3 — le bucket doit exister avant (créé manuellement une fois par session AWS Academy)
   backend "s3" {
-    bucket = "iac-terraform-state-bucket-midera-01"   # à adapter, voir étapes AWS Academy
+    bucket = "iac-terraform-state-bucket-midera-02"   # à adapter, voir étapes AWS Academy
     key    = "iac-app/terraform.tfstate"
     region = "us-east-1"
     # Pas de dynamodb lock : AWS Academy ne permet pas de créer des tables DynamoDB facilement
