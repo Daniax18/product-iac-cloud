@@ -20,6 +20,7 @@ services:
 
   authentification-service:
     build: ./Authentification
+    restart: on-failure
     environment:
       ConnectionStrings__DockerDb: Host=${AUTH_DB_HOST};Database=${AUTH_DB_NAME};Username=${AUTH_DB_USER};Password=${AUTH_DB_PASSWORD}
       JwtSettings__SecretKey: ${JWT_SECRET:-dev-only-change-me-before-production}
@@ -33,6 +34,7 @@ services:
 
   product-service:
     build: ./Product
+    restart: on-failure
     environment:
       ConnectionStrings__DockerDb: Host=${PRODUCT_DB_HOST};Database=${PRODUCT_DB_NAME};Username=${PRODUCT_DB_USER};Password=${PRODUCT_DB_PASSWORD}
     ports:
