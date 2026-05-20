@@ -38,3 +38,43 @@ variable "deploy_path" {
   type        = string
   default     = "/opt/iac-app"
 }
+
+# ─── RDS Auth DB ──────────────────────────────────────────────────────────────
+
+variable "auth_db_name" {
+  description = "Nom de la base de données Auth"
+  type        = string
+  default     = "authentication_db"
+}
+
+variable "auth_db_user" {
+  description = "Utilisateur de la base de données Auth"
+  type        = string
+  default     = "postgres"
+}
+
+variable "auth_db_password" {
+  description = "Mot de passe de la base de données Auth"
+  type        = string
+  sensitive   = true
+}
+
+# ─── RDS Product DB ───────────────────────────────────────────────────────────
+
+variable "product_db_name" {
+  description = "Nom de la base de données Product"
+  type        = string
+  default     = "product_db"
+}
+
+variable "product_db_user" {
+  description = "Utilisateur de la base de données Product"
+  type        = string
+  default     = "postgres"
+}
+
+variable "product_db_password" {
+  description = "Mot de passe de la base de données Product"
+  type        = string
+  sensitive   = true
+}
