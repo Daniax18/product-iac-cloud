@@ -12,3 +12,15 @@ output "public_dns" {
   description = "DNS public de l'instance"
   value       = aws_instance.app.public_dns
 }
+
+# ─── RDS ──────────────────────────────────────────────────────────────────────
+
+output "auth_db_endpoint" {
+  description = "Endpoint RDS de la base Auth (sans le port)"
+  value       = aws_db_instance.auth.address
+}
+
+output "product_db_endpoint" {
+  description = "Endpoint RDS de la base Product (sans le port)"
+  value       = aws_db_instance.product.address
+}
