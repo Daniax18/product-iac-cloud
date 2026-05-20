@@ -47,13 +47,13 @@ jobs:
 
       - name: Create S3 bucket if not exists
         run: |
-          if ! aws s3api head-bucket --bucket iac-terraform-state-bucket 2>/dev/null; then
+          if ! aws s3api head-bucket --bucket iac-terraform-state-bucket-midera-01 2>/dev/null; then
             echo "Bucket inexistant, création..."
             aws s3api create-bucket \
-              --bucket iac-terraform-state-bucket \
+              --bucket iac-terraform-state-bucket-midera-01 \
               --region us-east-1
             aws s3api put-bucket-versioning \
-              --bucket iac-terraform-state-bucket \
+              --bucket iac-terraform-state-bucket-midera-01 \
               --versioning-configuration Status=Enabled
             echo "Bucket créé avec versioning activé"
           else
