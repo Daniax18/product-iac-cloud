@@ -127,6 +127,12 @@ jobs:
           echo "auth_db_endpoint=$(terraform output -raw auth_db_endpoint)"       >> $GITHUB_OUTPUT
           echo "product_db_endpoint=$(terraform output -raw product_db_endpoint)" >> $GITHUB_OUTPUT
 
+      - name: Test outputs
+        run: |
+          echo "IP: ${{ steps.tf_output.outputs.public_ip }}"
+          echo "Auth DB: ${{ steps.tf_output.outputs.auth_db_endpoint }}"
+          echo "Product DB: ${{ steps.tf_output.outputs.product_db_endpoint }}"
+
   # ─── Ansible : configure l'EC2 et déploie l'app ─────────────────────────────
   ansible:
     name: Ansible Deploy
