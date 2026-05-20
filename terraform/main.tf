@@ -49,7 +49,7 @@ resource "aws_key_pair" "deploy" {
   }
 }
 
-# ─── Security Group ───────────────────────────────────────────────────────────
+# ─── Security Group EC2 ───────────────────────────────────────────────────────────
 
 resource "aws_security_group" "app" {
   name        = "${var.app_name}-sg"
@@ -93,6 +93,109 @@ resource "aws_security_group" "app" {
 
   lifecycle {
     create_before_destroy = true
+  }
+}
+
+# ─── Security Group RDS ───────────────────────────────────────────────────────
+# Autorise uniquement l'EC2 à se connecter aux bases de données
+
+resource "aws_security_group" "rds" {
+  name        = "${var.app_name}-rds-sg"
+  description = "Security group for ${var.app_name} RDS - accessible only from EC2"
+  vpc_id      = data.aws_vpc.default.id
+
+  ingress {
+    description     = "PostgreSQL from EC2 only"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.app.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.app_name}-rds-sg"
+  }
+}
+
+# ─── RDS Subnet Group ─────────────────────────────────────────────────────────
+# RDS a besoin d'au moins 2 subnets dans des zones de disponibilité différentes
+
+resource "aws_db_subnet_group" "main" {
+  name       = "${var.app_name}-db-subnet-group"
+  subnet_ids = tolist(data.aws_subnets.default.ids)
+
+  tags = {
+    Name = "${var.app_name}-db-subnet-group"
+  }
+}
+
+# ─── RDS Auth DB ──────────────────────────────────────────────────────────────
+
+resource "aws_db_instance" "auth" {
+  identifier        = "${var.app_name}-auth-db"
+  engine            = "postgres"
+  engine_version    = "15"
+  instance_class    = "db.t3.micro"
+  allocated_storage = 20
+  storage_type      = "gp3"
+
+  db_name  = var.auth_db_name
+  username = var.auth_db_user
+  password = var.auth_db_password
+
+  db_subnet_group_name   = aws_db_subnet_group.main.name
+  vpc_security_group_ids = [aws_security_group.rds.id]
+
+  # Pas de Multi-AZ pour réduire les coûts (à activer en prod réelle)
+  multi_az = false
+
+  # Pas de backup automatique pour réduire les coûts Academy
+  backup_retention_period = 0
+
+  # Permet la suppression sans snapshot final
+  skip_final_snapshot = true
+  deletion_protection = false
+
+  # Applique les modifications immédiatement sans attendre la fenêtre de maintenance
+  apply_immediately = true
+
+  tags = {
+    Name = "${var.app_name}-auth-db"
+  }
+}
+
+# ─── RDS Product DB ───────────────────────────────────────────────────────────
+
+resource "aws_db_instance" "product" {
+  identifier        = "${var.app_name}-product-db"
+  engine            = "postgres"
+  engine_version    = "15"
+  instance_class    = "db.t3.micro"
+  allocated_storage = 20
+  storage_type      = "gp3"
+
+  db_name  = var.product_db_name
+  username = var.product_db_user
+  password = var.product_db_password
+
+  db_subnet_group_name   = aws_db_subnet_group.main.name
+  vpc_security_group_ids = [aws_security_group.rds.id]
+
+  multi_az                = false
+  backup_retention_period = 0
+  skip_final_snapshot     = true
+  deletion_protection     = false
+  apply_immediately       = true
+
+  tags = {
+    Name = "${var.app_name}-product-db"
   }
 }
 

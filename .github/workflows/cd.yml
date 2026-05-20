@@ -111,6 +111,8 @@ jobs:
         run: |
           terraform plan \
             -var="public_key_content=${{ env.SSH_PUBLIC_KEY }}" \
+            -var="auth_db_password=${{ secrets.AUTH_DB_PASSWORD }}" \
+            -var="product_db_password=${{ secrets.PRODUCT_DB_PASSWORD }}" \
             -out=tfplan
 
       - name: Terraform Apply
@@ -121,7 +123,9 @@ jobs:
         id: tf_output
         working-directory: terraform
         run: |
-          echo "public_ip=$(terraform output -raw public_ip)" >> $GITHUB_OUTPUT
+          echo "public_ip=$(terraform output -raw public_ip)"                     >> $GITHUB_OUTPUT
+          echo "auth_db_endpoint=$(terraform output -raw auth_db_endpoint)"       >> $GITHUB_OUTPUT
+          echo "product_db_endpoint=$(terraform output -raw product_db_endpoint)" >> $GITHUB_OUTPUT
 
   # ─── Ansible : configure l'EC2 et déploie l'app ─────────────────────────────
   ansible:
@@ -183,9 +187,11 @@ jobs:
               auth_db_user=${{ secrets.AUTH_DB_USER }}
               auth_db_password=${{ secrets.AUTH_DB_PASSWORD }}
               auth_db_name=${{ secrets.AUTH_DB_NAME }}
+              auth_db_endpoint=${{ needs.terraform.outputs.auth_db_endpoint }}
               product_db_user=${{ secrets.PRODUCT_DB_USER }}
               product_db_password=${{ secrets.PRODUCT_DB_PASSWORD }}
               product_db_name=${{ secrets.PRODUCT_DB_NAME }}
+              product_db_endpoint=${{ needs.terraform.outputs.product_db_endpoint }}
               jwt_secret=${{ secrets.JWT_SECRET }}
               jwt_issuer=${{ secrets.JWT_ISSUER }}
               jwt_audience=${{ secrets.JWT_AUDIENCE }}
