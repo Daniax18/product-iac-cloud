@@ -68,6 +68,8 @@ jobs:
     environment: develop
     outputs:
       public_ip: ${{ steps.tf_output.outputs.public_ip }}
+      auth_db_endpoint:    ${{ steps.tf_output.outputs.auth_db_endpoint }}
+      product_db_endpoint: ${{ steps.tf_output.outputs.product_db_endpoint }}
 
     steps:
       - name: Checkout repository
@@ -97,7 +99,7 @@ jobs:
           aws-region:            us-east-1
 
       # Gestion de la key pair existante : on la supprime si elle existe déjà
-      # pour éviter l'erreur "already exists" entre deux sessions Academy
+      # pour éviter l'erreur "already exists" entre deux sessions Academy // todo : à supprimer
       - name: Delete existing EC2 key pair if present
         run: |
           aws ec2 delete-key-pair --key-name iac-deploy-key 2>/dev/null || true
