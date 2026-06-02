@@ -67,7 +67,9 @@ jobs:
     needs: bootstrap
     environment: develop
     outputs:
-      public_ip: ${{ steps.tf_output.outputs.public_ip }}
+      bastion_public_ip:   ${{ steps.tf_output.outputs.bastion_public_ip }}
+      app_private_ip:      ${{ steps.tf_output.outputs.app_private_ip }}
+      alb_dns:             ${{ steps.tf_output.outputs.alb_dns }}
       auth_db_endpoint:    ${{ steps.tf_output.outputs.auth_db_endpoint }}
       product_db_endpoint: ${{ steps.tf_output.outputs.product_db_endpoint }}
 
@@ -98,12 +100,6 @@ jobs:
           aws-session-token:     ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region:            us-east-1
 
-      # Gestion de la key pair existante : on la supprime si elle existe déjà
-      # pour éviter l'erreur "already exists" entre deux sessions Academy // todo : à supprimer
-      - name: Delete existing EC2 key pair if present
-        run: |
-          aws ec2 delete-key-pair --key-name iac-deploy-key 2>/dev/null || true
-
       - name: Terraform Init
         working-directory: terraform
         run: terraform init
@@ -125,15 +121,11 @@ jobs:
         id: tf_output
         working-directory: terraform
         run: |
-          echo "public_ip=$(terraform output -raw public_ip)"                     >> $GITHUB_OUTPUT
+          echo "bastion_public_ip=$(terraform output -raw bastion_public_ip)"     >> $GITHUB_OUTPUT
+          echo "app_private_ip=$(terraform output -raw app_private_ip)"           >> $GITHUB_OUTPUT
+          echo "alb_dns=$(terraform output -raw alb_dns)"                         >> $GITHUB_OUTPUT
           echo "auth_db_endpoint=$(terraform output -raw auth_db_endpoint)"       >> $GITHUB_OUTPUT
           echo "product_db_endpoint=$(terraform output -raw product_db_endpoint)" >> $GITHUB_OUTPUT
-
-      - name: Test outputs
-        run: |
-          echo "IP: ${{ steps.tf_output.outputs.public_ip }}"
-          echo "Auth DB: ${{ steps.tf_output.outputs.auth_db_endpoint }}"
-          echo "Product DB: ${{ steps.tf_output.outputs.product_db_endpoint }}"
 
   # ─── Ansible : configure l'EC2 et déploie l'app ─────────────────────────────
   ansible:
@@ -157,30 +149,37 @@ jobs:
           printf '%s\n' "${{ secrets.EC2_SSH_PRIVATE_KEY_DEPLOY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
 
-      - name: Wait for EC2 SSH port
+      - name: Wait for Bastion SSH port
         run: |
-          EC2_IP="${{ needs.terraform.outputs.public_ip }}"
-          echo "Waiting for SSH on $EC2_IP..."
+          BASTION_IP="${{ needs.terraform.outputs.bastion_public_ip }}"
+          echo "Waiting for SSH on Bastion $BASTION_IP..."
           for i in $(seq 1 20); do
-            if nc -z -w5 "$EC2_IP" 22 2>/dev/null; then
-              echo "SSH ready"
+            if nc -z -w5 "$BASTION_IP" 22 2>/dev/null; then
+              echo "Bastion SSH ready"
               break
             fi
             echo "Attempt $i/20 - waiting 15s..."
             sleep 15
           done
 
-      - name: Add EC2 to known hosts
+      - name: Add Bastion and App EC2 to known hosts
         run: |
-          EC2_IP="${{ needs.terraform.outputs.public_ip }}"
-          ssh-keyscan -H "$EC2_IP" >> ~/.ssh/known_hosts
+          BASTION_IP="${{ needs.terraform.outputs.bastion_public_ip }}"
+          APP_IP="${{ needs.terraform.outputs.app_private_ip }}"
+          # Scan du bastion depuis internet
+          ssh-keyscan -H "$BASTION_IP" >> ~/.ssh/known_hosts
+          # Scan de l'EC2 privée via le bastion
+          ssh-keyscan -H "$APP_IP" \
+            -o "ProxyJump=ubuntu@$BASTION_IP" \
+            >> ~/.ssh/known_hosts 2>/dev/null || true
 
       - name: Generate Ansible inventory
         run: |
-          EC2_IP="${{ needs.terraform.outputs.public_ip }}"
+          BASTION_IP="${{ needs.terraform.outputs.bastion_public_ip }}"
+          APP_IP="${{ needs.terraform.outputs.app_private_ip }}"
           cat > ansible/inventory.ini <<EOF
           [ec2]
-          ${EC2_IP} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/deploy_key ansible_ssh_common_args='-o StrictHostKeyChecking=accept-new -o ServerAliveInterval=60'
+          ${APP_IP} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/deploy_key ansible_ssh_common_args='-o StrictHostKeyChecking=accept-new -o ProxyJump=ubuntu@${BASTION_IP} -o ServerAliveInterval=60'
           EOF
 
       - name: Run Ansible playbook
