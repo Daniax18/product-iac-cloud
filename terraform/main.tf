@@ -25,21 +25,96 @@ provider "aws" {
 
 # ─── Data sources ────────────────────────────────────────────────────────────
 
-data "aws_vpc" "default" {
-  default = true
-}
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
 
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-  filter {
-    name   = "availabilityZone"
-    values = ["us-east-1a", "us-east-1b", "us-east-1c", "us-east-1d", "us-east-1f"]
+  tags = {
+    Name = "${var.app_name}-vpc"
   }
 }
 
+# ─── Internet Gateway ─────────────────────────────────────────────────────────
+
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "${var.app_name}-igw"
+  }
+}
+
+# ─── Subnets publics (ALB + Bastion) ──────────────────────────────────────────
+
+resource "aws_subnet" "public_a" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "us-east-1a"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "${var.app_name}-subnet-public-a"
+  }
+}
+
+resource "aws_subnet" "public_b" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = "us-east-1b"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "${var.app_name}-subnet-public-b"
+  }
+}
+
+# ─── Subnets privés (EC2 app + RDS) ───────────────────────────────────────────
+
+resource "aws_subnet" "private_a" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.3.0/24"
+  availability_zone = "us-east-1a"
+
+  tags = {
+    Name = "${var.app_name}-subnet-private-a"
+  }
+}
+
+resource "aws_subnet" "private_b" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.4.0/24"
+  availability_zone = "us-east-1b"
+
+  tags = {
+    Name = "${var.app_name}-subnet-private-b"
+  }
+}
+
+# ─── Route Table publique ─────────────────────────────────────────────────────
+
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
+
+  tags = {
+    Name = "${var.app_name}-rt-public"
+  }
+}
+
+resource "aws_route_table_association" "public_a" {
+  subnet_id      = aws_subnet.public_a.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "public_b" {
+  subnet_id      = aws_subnet.public_b.id
+  route_table_id = aws_route_table.public.id
+}
 # ─── Key Pair ─────────────────────────────────────────────────────────────────
 # Recréée à chaque session car la key pair peut être perdue
 
@@ -53,33 +128,18 @@ resource "aws_key_pair" "deploy" {
   }
 }
 
-# ─── Security Group EC2 ───────────────────────────────────────────────────────────
+# ─── Security Group Bastion ───────────────────────────────────────────────────
+# Seul point d'entrée SSH depuis internet
 
-resource "aws_security_group" "app" {
-  name        = "${var.app_name}-sg"
-  description = "Security group for ${var.app_name}"
-  vpc_id      = data.aws_vpc.default.id
+resource "aws_security_group" "bastion" {
+  name        = "${var.app_name}-bastion-sg"
+  description = "Security group for Bastion Host - SSH only"
+  vpc_id      = aws_vpc.main.id
 
   ingress {
-    description = "SSH"
+    description = "SSH depuis internet"
     from_port   = 22
     to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "Frontend"
-    from_port   = 5000
-    to_port     = 5000
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "Gateway"
-    from_port   = 8080
-    to_port     = 8080
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -92,11 +152,79 @@ resource "aws_security_group" "app" {
   }
 
   tags = {
-    Name = "${var.app_name}-sg"
+    Name = "${var.app_name}-bastion-sg"
+  }
+}
+
+# ─── Security Group ALB ───────────────────────────────────────────────────────
+# Accepte le trafic HTTP depuis internet
+
+resource "aws_security_group" "alb" {
+  name        = "${var.app_name}-alb-sg"
+  description = "Security group for ALB - HTTP from internet"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
-  lifecycle {
-    create_before_destroy = true
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.app_name}-alb-sg"
+  }
+}
+
+# ─── Security Group EC2 App ───────────────────────────────────────────────────
+# Accepte le trafic uniquement depuis ALB et SSH depuis Bastion
+
+resource "aws_security_group" "app" {
+  name        = "${var.app_name}-app-sg"
+  description = "Security group for App EC2 - traffic from ALB and Bastion only"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description     = "SSH depuis Bastion uniquement"
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
+  }
+
+  ingress {
+    description     = "Frontend depuis ALB"
+    from_port       = 5000
+    to_port         = 5000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  ingress {
+    description     = "Gateway depuis ALB"
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.app_name}-app-sg"
   }
 }
 
@@ -105,8 +233,8 @@ resource "aws_security_group" "app" {
 
 resource "aws_security_group" "rds" {
   name        = "${var.app_name}-rds-sg"
-  description = "Security group for ${var.app_name} RDS - accessible only from EC2"
-  vpc_id      = data.aws_vpc.default.id
+  description = "Security group for RDS - PostgreSQL from App EC2 only"
+  vpc_id      = aws_vpc.main.id
 
   ingress {
     description     = "PostgreSQL from EC2 only"
@@ -128,12 +256,54 @@ resource "aws_security_group" "rds" {
   }
 }
 
+# ─── Bastion Host ─────────────────────────────────────────────────────────────
+# Petite instance publique servant uniquement de relai SSH vers l'EC2 privée
+
+resource "aws_instance" "bastion" {
+  ami                         = var.ami_id
+  instance_type               = "t3.micro"
+  key_name                    = aws_key_pair.deploy.key_name
+  subnet_id                   = aws_subnet.public_a.id
+  vpc_security_group_ids      = [aws_security_group.bastion.id]
+  associate_public_ip_address = true
+
+  tags = {
+    Name = "${var.app_name}-bastion"
+  }
+}
+
+# ─── EC2 App ──────────────────────────────────────────────────────────────────
+# Instance privée — accessible uniquement via Bastion et ALB
+
+resource "aws_instance" "app" {
+  ami                         = var.ami_id
+  instance_type               = var.instance_type
+  key_name                    = aws_key_pair.deploy.key_name
+  subnet_id                   = aws_subnet.private_a.id
+  vpc_security_group_ids      = [aws_security_group.app.id]
+  associate_public_ip_address = false
+
+  root_block_device {
+    volume_size = 20
+    volume_type = "gp3"
+  }
+
+  user_data = <<-EOF
+    #!/bin/bash
+    mkdir -p ${var.deploy_path}
+    chown ubuntu:ubuntu ${var.deploy_path}
+  EOF
+
+  tags = {
+    Name = "${var.app_name}-app"
+  }
+}
+
 # ─── RDS Subnet Group ─────────────────────────────────────────────────────────
-# RDS a besoin d'au moins 2 subnets dans des zones de disponibilité différentes
 
 resource "aws_db_subnet_group" "main" {
   name       = "${var.app_name}-db-subnet-group"
-  subnet_ids = tolist(data.aws_subnets.default.ids)
+  subnet_ids = [aws_subnet.private_a.id, aws_subnet.private_b.id]
 
   tags = {
     Name = "${var.app_name}-db-subnet-group"
@@ -157,18 +327,11 @@ resource "aws_db_instance" "auth" {
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
 
-  # Pas de Multi-AZ pour réduire les coûts (à activer en prod réelle)
-  multi_az = false
-
-  # Pas de backup automatique pour réduire les coûts Academy
+  multi_az                = false
   backup_retention_period = 0
-
-  # Permet la suppression sans snapshot final
-  skip_final_snapshot = true
-  deletion_protection = false
-
-  # Applique les modifications immédiatement sans attendre la fenêtre de maintenance
-  apply_immediately = true
+  skip_final_snapshot     = true
+  deletion_protection     = false
+  apply_immediately       = true
 
   tags = {
     Name = "${var.app_name}-auth-db"
@@ -203,28 +366,100 @@ resource "aws_db_instance" "product" {
   }
 }
 
-# ─── EC2 Instance ─────────────────────────────────────────────────────────────
+# ─── ALB ──────────────────────────────────────────────────────────────────────
 
-resource "aws_instance" "app" {
-  ami                         = var.ami_id
-  instance_type               = var.instance_type
-  key_name                    = aws_key_pair.deploy.key_name
-  subnet_id                   = tolist(data.aws_subnets.default.ids)[0]
-  vpc_security_group_ids      = [aws_security_group.app.id]
-  associate_public_ip_address = true
-
-  root_block_device {
-    volume_size = 20
-    volume_type = "gp3"
-  }
-
-  user_data = <<-EOF
-    #!/bin/bash
-    mkdir -p ${var.deploy_path}
-    chown ubuntu:ubuntu ${var.deploy_path}
-  EOF
+resource "aws_lb" "main" {
+  name               = "${var.app_name}-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = [aws_subnet.public_a.id, aws_subnet.public_b.id]
 
   tags = {
-    Name = var.app_name
+    Name = "${var.app_name}-alb"
+  }
+}
+
+# ─── ALB Target Groups ────────────────────────────────────────────────────────
+
+resource "aws_lb_target_group" "front" {
+  name     = "${var.app_name}-tg-front"
+  port     = 5000
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.main.id
+
+  health_check {
+    path                = "/"
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    interval            = 30
+  }
+
+  tags = {
+    Name = "${var.app_name}-tg-front"
+  }
+}
+
+resource "aws_lb_target_group" "gateway" {
+  name     = "${var.app_name}-tg-gateway"
+  port     = 8080
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.main.id
+
+  health_check {
+    path                = "/health"
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    interval            = 30
+  }
+
+  tags = {
+    Name = "${var.app_name}-tg-gateway"
+  }
+}
+
+# ─── ALB Target Group Attachments ─────────────────────────────────────────────
+
+resource "aws_lb_target_group_attachment" "front" {
+  target_group_arn = aws_lb_target_group.front.arn
+  target_id        = aws_instance.app.id
+  port             = 5000
+}
+
+resource "aws_lb_target_group_attachment" "gateway" {
+  target_group_arn = aws_lb_target_group.gateway.arn
+  target_id        = aws_instance.app.id
+  port             = 8080
+}
+
+# ─── ALB Listener HTTP ────────────────────────────────────────────────────────
+
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  # Par défaut → frontend
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.front.arn
+  }
+}
+
+# ─── ALB Listener Rules ───────────────────────────────────────────────────────
+
+resource "aws_lb_listener_rule" "gateway" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 10
+
+  condition {
+    path_pattern {
+      values = ["/api/*"]
+    }
+  }
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.gateway.arn
   }
 }
